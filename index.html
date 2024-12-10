@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>휘매쓰 연산 챌린지!</title>
+<style>
+  body {
+    font-family: sans-serif;
+    background: linear-gradient(to bottom, #f9f9f9, #e0e0e0);
+    margin: 0;
+    padding: 0;
+  }
+  #container {
+    width: 80%;
+    margin: 0 auto;
+    padding-top: 20px;
+  }
+  h1, h2, h3, h4 {
+    text-align: center;
+  }
+  .hidden {display:none;}
+  #game-screen, #difficulty-screen, #result-screen {
+    margin-top: 20px;
+  }
+  #energy-bar-container {
+    width: 100%;
+    background-color: #ccc;
+    height: 20px;
+    position: relative;
+    margin-bottom: 10px;
+  }
+  #energy-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #76c7c0;
+    transition: width 1s linear;
+  }
+  #score, #lives, #total-time, #chance, #current-difficulty {
+    font-size: 18px;
+    margin: 5px;
+    display: inline-block;
+  }
+  #problem-container {
+    margin-top: 20px;
+    text-align: center;
+  }
+  .choices {
+    list-style: none;
+    padding: 0;
+  }
+  .choices li {
+    background: #fff;
+    margin: 5px 0;
+    padding: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.3s;
+    border: 1px solid #ccc;
+  }
+  .choices li:hover {
+    background: #eef;
+  }
+  #message {
+    text-align: center;
+    font-weight: bold;
+    height: 30px;
+    margin-top: 10px;
+  }
+  #popup {
+    position: fixed;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #fffae6;
+    border: 2px solid #aaa;
+    padding: 20px;
+    display: none;
+    z-index: 9999;
+  }
+  #popup button {
+    margin-top: 10px;
+  }
+</style>
+
+<!-- MathJax -->
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+
+</head>
+<body>
+<div id="container">
+  <h1>휘매쓰 연산 챌린지!</h1>
+  <div id="difficulty-screen">
+    <h2>난이도를 선택하세요</h2>
+    <button onclick="startGame('hardest')">최상</button>
+    <button onclick="startGame('hard')">상</button>
+    <button onclick="startGame('medium')">중</button>
+    <button onclick="startGame('easy')">하</button>
+  </div>
+  
+  <div id="game-screen" class="hidden">
+    <div id="info">
+      <span id="current-difficulty"></span>
+      <span id="score">점수: 0</span>
+      <span id="chance">남은 기회: 3</span>
+      <span id="total-time">전체 경과 시간: 0초</span>
+    </div>
+    <div id="energy-bar-container" class="hidden">
+      <div id="energy-bar"></div>
+    </div>
+    
+    <div id="problem-container">
+      <h2>문제</h2>
+      <div id="problem"></div>
+      <ul class="choices" id="choices"></ul>
+      <div id="message"></div>
+    </div>
+  </div>
+  
+  <div id="result-screen" class="hidden">
+    <h2>게임 종료</h2>
+    <p>최종 점수: <span id="final-score"></span></p>
+    <button onclick="location.reload()">다시 시작</button>
+  </div>
+</div>
+
+<div id="popup">
+  <div id="popup-message"></div>
+  <button onclick="closePopup()">확인</button>
+</div>
+
+<script>
+// 난이도별 시간 및 점수
+var difficultySettings = {
+  "hardest": {time:20, score:20},
+  "hard": {time:30, score:15},
+  "medium": {time:40, score:13},
+  "easy": {time:null, score:10}
+};
+
+var currentDifficulty = null;
+var score = 0;
+var lives = 3;
+var totalTime = 0;
+var currentProblem = null;
+var usedProblems = [];
+var infiniteMode = false; 
+var popupShown = false;
+
+// 문제 데이터(인수분해 불가능한 문제(#43, #96, #97, #98)는 제외):
+// 각 문제: {q:"...", a:"정답", wrong:["오답1","오답2","오답3"]}
+
+// 1~26
+var problems_1_26 = [
+{q:"x² + xy - 8x - 4y +16", a:"(x -4)(x + y -4)",
+ wrong:["(x -4)(x + y +4)","(x +4)(x + y -4)","(x -4)(x - y -4)"]},
+{q:"x² + 2xy + x -4y -6", a:"(x + 2y + 3)(x -2)",
+ wrong:["(x + 2y -3)(x +2)","(x + 2y +2)(x -3)","(x + y +3)(x + 2y -2)"]},
+{q:"x² + y² + 2xz + 2yz + 2xy", a:"(x + y)(x + y + 2z)",
+ wrong:["(x + y)(x + y -2z)","(x + y + z)²","(x + y + z)(x + y + z)"]},
+{q:"x² + xy - x + 2y -6", a:"(x +2)(x + y -3)",
+ wrong:["(x +3)(x + y -2)","(x +2)(x + y +3)","(x -2)(x + y -3)"]},
+{q:"xy - x -4y +4", a:"(x -4)(y -1)",
+ wrong:["(x +4)(y -1)","(x -4)(y +1)","(x -2)(y -2)"]},
+{q:"a³ + a² - a -1", a:"(a +1)²(a -1)",
+ wrong:["(a +1)(a -1)²","(a -1)(a² +1)","(a +1)(a² -1)"]},
+{q:"xy - xz - y + z", a:"(x -1)(y - z)",
+ wrong:["(x +1)(y - z)","(x -1)(z - y)","(y -1)(x - z)"]},
+{q:"x² + 3x -3y - y²", a:"(x - y)(x + y +3)",
+ wrong:["(x + y)(x - y +3)","(x - y)(x + y -3)","(x +3)(x - y + y)"]},
+{q:"x² + 2x +1 - y²", a:"(x +1 + y)(x +1 - y)",
+ wrong:["(x + y +1)(x - y +1)","(x +1)² - y²","(x - y)(x +2 + y)"]},
+{q:"a² -4a +4 - b²", a:"(a -2 + b)(a -2 - b)",
+ wrong:["(a -2)(a -2 - b²)","(a -2)(a +2) - b²","(a -b -2)(a -b +2)"]},
+{q:"a² -6a - b² +9", a:"(a -3 + b)(a -3 - b)",
+ wrong:["(a -3)² - b²","(a -3 - b²)(a -3)","(a + b -3)(a - b -3)"]},
+{q:"x³y +4x²y +4xy", a:"xy(x +2)²",
+ wrong:["xy(x +2)(x +2y)","x²y(x +4)","xy(x +4)²"]},
+{q:"xy - x - y +1", a:"(x -1)(y -1)",
+ wrong:["(x +1)(y -1)","(x -1)(y +1)","(x -2)(y -1)"]},
+{q:"x² +3x +3y - y²", a:"(x - y)(x + y +3)",
+ wrong:["(x + y)(x - y +3)","(x + y +3)(x + y - y)","(x - y)(x + y -3)"]},
+{q:"x³ -3x² - x +3", a:"(x -1)(x +1)(x -3)",
+ wrong:["(x +3)(x -1)(x -1)","(x -1)(x -3)(x +3)","(x -1)²(x -3)"]},
+{q:"2x² - xy +4xz -2yz", a:"(2x - y)(x + 2z)",
+ wrong:["(2x + y)(x -2z)","(x - y)(2x +2z)","(2x - z)(x + 2y)"]},
+{q:"xy +2y + x +2", a:"(x +2)(y +1)",
+ wrong:["(x +1)(y +2)","(x + y)(2 +1)","(x +2y +2)"]},
+{q:"xy + x - y -1", a:"(x -1)(y +1)",
+ wrong:["(x +1)(y -1)","(x -1)(y -1)","(x -2)(y +1)"]},
+{q:"x² - xy + y - x", a:"(x -1)(x - y)",
+ wrong:["(x +1)(x - y)","(x - y)(x -2)","(x -1)(y - x)"]},
+{q:"x² -4x +4 - y²", a:"(x -2 + y)(x -2 - y)",
+ wrong:["(x -2)² - y²","(x -y)(x -2 - y)","(x + y -2)(x + y +2)"]},
+{q:"x² + y² -4 + 2xy", a:"(x + y +2)(x + y -2)",
+ wrong:["(x + y -2)(x - y +2)","(x + y)² -4","(x +2)(y +2) -4"]},
+{q:"x² - y² -6y -9", a:"(x + y +3)(x - y -3)",
+ wrong:["(x - y)(x + y -3)","(x +3 - y)(x +3 + y)","(x - (y+3))(x + (y+3))"]},
+{q:"xy -3x + y -3", a:"(x +1)(y -3)",
+ wrong:["(x -3)(y +1)","(x + y -3)(x +1)","(y -3)(x -1)"]},
+{q:"xy +5x -3y -15", a:"(x -3)(y +5)",
+ wrong:["(x +5)(y -3)","(x -3)(y -5)","(x -1)(y +15)"]},
+{q:"xy - xz + y - z", a:"(x +1)(y - z)",
+ wrong:["(x -1)(y - z)","(y +1)(x - z)","(x + z)(y -1)"]},
+{q:"x² - y² -2x + 2y", a:"(x - y)(x + y -2)",
+ wrong:["(x + y)(x - y -2)","(x -2)(y -2)(x - y)","(x - y -1)(x + y -1)"]}
+];
+
+// 28~42 (43 제외), 44~50
+var problems_28_50 = [
+{q:"4 - x² - y² + 2xy", a:"(2 + x - y)(2 - x + y)",
+ wrong:["(2 - x - y)(2 + x + y)","(2 + y - x)(2 - y + x)","(x + y -2)(x + y +2)"]},
+{q:"x² - y² + z² - 2xz", a:"(x - y + z)(x + y - z)",
+ wrong:["(x + z - y)(x - z - y)","(x + y + z)(x + y - z)","(x - z)² - y²"]},
+{q:"x² + xy -3x + y -4", a:"(x +1)(x + y -4)",
+ wrong:["(x -1)(x + y -4)","(x +2)(x + y -3)","(x + y -1)(x + y -4)"]},
+{q:"x² - xy +5x -2y +6", a:"(x -2)(x - y +3)",
+ wrong:["(x +2)(x - y +3)","(x -2)(x + y +3)","(x -3)(x - y +2)"]},
+{q:"x² -8x +15 + 2xy -6y", a:"(2x +3)(x -2 + y)",
+ wrong:["(2x +3)(x +2 - y)","(x +3)(2x -2 + y)","(2x +y)(x -2 +3)"]},
+{q:"2x² -4x +2 + xy - y", a:"(x +1)(2x - y +2)",
+ wrong:["(x +1)(2x - y -2)","(2x -1)(x + y +2)","(x +2)(2x -y +1)"]},
+{q:"3x² -5x + 2xy -4y -2", a:"(3x + 2y -2)(x -1)",
+ wrong:["(3x -2)(x -1 - 2y)","(3x +2y)(x -1) -2","(3x +2y -1)(x -2)"]},
+{q:"2x² - xy - x + y - y²", a:"(2x + y -1)(x - y)",
+ wrong:["(2x - y -1)(x - y)","(x - y)(2x - y +1)","(2x +1 -y)(y - x)"]},
+{q:"x² -2x +1 + xy - y", a:"(x +1)(x - y -1)",
+ wrong:["(x -1)(x + y +1)","(x +1)(x + y -1)","(x +1)² - (y+1)"]},
+{q:"x² +3xy -6x -3y +5", a:"(x + y -1)(x + 3y -5)",
+ wrong:["(x + y +1)(x + 3y -5)","(x + y -1)(x + y -5)","(x +3y -1)(x + y -5)"]},
+{q:"x² +2y² -3xy -3x +6y", a:"(x - y)(x + 2y +3)",
+ wrong:["(x + y)(x + y -3)","(x - y)(x + 2y -3)","(x +2y)(x - y +3)"]},
+{q:"x² +2xy + y² - 2x -2y +1", a:"(x + y -1)²",
+ wrong:["(x + y +1)²","(x + y -1)(x + y +1)","(x + y)² -1"]},
+{q:"x² -3xy -5x +6y +6", a:"(x -3)(x + y +2)",
+ wrong:["(x +3)(x - y -2)","(x -3)(x + 2y +1)","(x -2)(x + y +3)"]},
+{q:"x² -2xy -4x +2y +3", a:"(x -1)(x - 2y -3)",
+ wrong:["(x +1)(x + 2y +3)","(x -1)(x -2y +3)","(x -3)(x -2y -1)"]},
+{q:"x² +3xy +4x -3y -5", a:"(x +5)(x + 3y -1)",
+ wrong:["(x -5)(x + 3y +1)","(x +5)(x + y -3)","(x +3)(x + y -1)"]},
+{q:"2x² - x +2y - xy -6", a:"(2x -3)(x - y +2)",
+ wrong:["(2x +3)(x - y -2)","(2x -3)(x + y -2)","(x -3)(2x - y +2)"]},
+{q:"x² -2xy + xz - yz + y²", a:"(x + y)(x - y + z)",
+ wrong:["(x - y)(x + y -z)","(x + y + z)(x - y + z)","(x + y)(x + z - y)"]},
+{q:"36 - x² - y² +2xy", a:"(6 + x - y)(6 - x + y)",
+ wrong:["(6 + y - x)(6 - y + x)","(x + y -6)(x + y +6)","(x - y -6)(x - y +6)"]},
+{q:"16a² - b² +8a +1", a:"(4a +1 + b)(4a +1 - b)",
+ wrong:["(4a + b)(4a + 1 - b)","(4a +1)² - b²","(4a +1 +b)²"]},
+{q:"a² - b² -2bc - c²", a:"(a - b - c)(a + b + c)",
+ wrong:["(a - c -b)(a + b + c)","(a - b)(a - c) - c²","(a + b)(a - c) - b²"]},
+{q:"x² - y² -6x +9", a:"(x - y -3)(x + y -3)",
+ wrong:["(x -3)² - y²","(x + y -3)(x - y +3)","(x -3)(x -3 - y²)"]},
+{q:"9x²(x+1)-4x -4", a:"(x+1)(3x+2)(3x-2)",
+ wrong:["(3x +2)(3x -2)(x -1)","(x +1)(9x² -4)","(3x +1)(3x -4)(x+1)"]}
+];
+
+// 55~83
+var problems_55_83 = [
+{q:"(x + y)² +3(x+y)-10", a:"(x + y +5)(x + y -2)",
+ wrong:["(x + y -5)(x + y +2)","(x + y +2)(x + y -5)","(x + y)² -10"]},
+{q:"(x -4)² -9", a:"(x -1)(x -7)",
+ wrong:["(x -4 -3)(x -4 +3)","(x -3)(x -5)","(x -4 -9)(x -4)"]},
+{q:"(2x - y)² - (x+5y)²", a:"(3x +4y)(x -6y)",
+ wrong:["(3x -4y)(x +6y)","(2x - y - (x+5y))(2x - y + (x+5y))","(2x + y)(x -5y)"]},
+{q:"(a + b)(a+b -2)-8", a:"(a + b -4)(a+b +2)",
+ wrong:["(a +b -2)(a+b -4)","(a+b)² -8","(a+b -1)(a+b -8)"]},
+{q:"(x - y)(x-y-5)-14", a:"(x - y -7)(x - y +2)",
+ wrong:["(x - y -2)(x - y +7)","(x - y -1)(x - y -14)","(x - y -10)(x - y +5)"]},
+{q:"(x -2)² -2(x-2)+1", a:"(x -3)²",
+ wrong:["(x -1)²","(x -2 -1)²","(x -2 +1)(x -2 -1)"]},
+{q:"(2x +3)² - (x+2)²", a:"(3x +5)(x +1)",
+ wrong:["(3x +5)(x -1)","(3x -5)(x +1)","(2x +3 + x +2)(2x+3 -x -2)"]},
+{q:"(a -b)² - (a -b)-2", a:"(a -b -2)(a -b +1)",
+ wrong:["(a -b -1)(a -b +2)","(a -b)² -2","(a -b -1)² -1"]},
+{q:"(a+2b)² +5(a+2b)+6", a:"(a + 2b +2)(a + 2b +3)",
+ wrong:["(a+2b -2)(a+2b -3)","(a+2b+6)(a+2b+1)","(a+2b +1)(a+2b +6)"]},
+{q:"(x+y)(x+y -6)+9", a:"(x+y -3)²",
+ wrong:["(x+y -3)(x+y -3)","(x+y -1)²","(x+y)² -6(x+y)+9"]},
+{q:"(3x -4)² +6(3x -4)+9", a:"(3x -1)²",
+ wrong:["(3x -3)²","(3x -4 +3)²","(3x -4)² +9"]},
+{q:"(a+b)² -14(a+b)+49", a:"(a+b -7)²",
+ wrong:["(a+b -7)(a+b -7)","(a+b -1)(a+b -49)","(a+b -14)(a+b +49)"]},
+{q:"(x -2y)² +8(x -2y)+16", a:"(x -2y +4)²",
+ wrong:["(x -2y -4)²","(x -2y +2)²","(x -2y +8)²"]},
+{q:"(x -2y)² -(2x+3y)²", a:"-(3x + y)(x +5y)",
+ wrong:["(3x +y)(-x -5y)","(x -2y -2x -3y)(x -2y +2x +3y)","(-3x -y)(-x -5y)"]},
+{q:"(2x+y)² +2x + y -12", a:"(2x + y -3)(2x + y +4)",
+ wrong:["(2x +y -4)(2x +y +3)","(2x +y)² -12","(2x + y -6)(2x + y +2)"]},
+{q:"3(x+y)² +10(x+y) +8", a:"(x+y+2)(3x+3y+4)",
+ wrong:["(x+y+2)(3(x+y)+4)","(3x+3y+2)(x+y+4)","(x+y+4)(3x+3y+2)"]},
+{q:"(2x+1)² -6(2x+1)+8", a:"(2x -1)(2x -3)",
+ wrong:["(2x -2)(2x -4)","(2x -1)² -3","(2x -4)(2x -1)"]},
+{q:"(x -3y)² -7(x -3y)+12", a:"(x -3y -3)(x -3y -4)",
+ wrong:["(x -3y -6)(x -3y -2)","(x -3y -1)(x -3y -12)","(x -3y -2)(x -3y -5)"]},
+{q:"2(x+y)(x+y+1)-24", a:"2(x+y+4)(x+y -3)",
+ wrong:["2(x+y-4)(x+y+3)","(x+y)(2x+2y+2)-24","2(x+y)² +2(x+y)-24"]},
+{q:"(a -3)x² +2(a -3)x -24(a -3)", a:"(a -3)(x+6)(x-4)",
+ wrong:["(a -3)(x -6)(x+4)","(a-3)(x²+2x-24)","(a -3)(x+4)(x-6)"]},
+{q:"(x -1)x² -16(x -1)", a:"(x -1)(x² -16) = (x -1)(x+4)(x-4)",
+ wrong:["(x -1)(x -4)(x -4)","(x -1)(x² -16)","(x -1)(x+2)(x-8)"]},
+{q:"3(x+y)x² -5xy(x+y)-2y²(x+y)", a:"(x+y)(3x+y)(x -2y)",
+ wrong:["(x+y)(3x -y)(x+2y)","(x+y)(3x+y)(x+2y)","(x+y)(x -2y)(3x-y)"]},
+{q:"(3x -1)y² +5(3x -1)y -14(3x-1)", a:"(3x -1)(y+7)(y-2)",
+ wrong:["(3x -1)(y-7)(y+2)","(3x -1)(y+14)(y -1)","(3x -1)(y² +5y -14)"]},
+{q:"(x+1)² -2(x+1)-15", a:"(x -4)(x +4)",
+ wrong:["(x -5)(x +3)","(x -3)(x +5)","(x+1 -5)(x+1 +3)"]},
+{q:"(3x+1)² -2(3x+1)-8", a:"9(x -1)(x +1)",
+ wrong:["(3x+1 -4)(3x+1 +2)","(3x -3)(3x +3)","9x² -1"]},
+{q:"2(a-1)² +3(a-1)-2", a:"(2a -3)(a +1)",
+ wrong:["(2a +3)(a-1)","(2a -1)(a -2)","(2a -3)(a -1)"]},
+{q:"6(x+2)² -13(x+2)-5", a:"(3x+7)(2x -1)",
+ wrong:["(3x -7)(2x +1)","(x+2)(6x+...)","(3x+5)(2x -3)"]},
+{q:"3(x+4y)² -5(x+4y)-2", a:"(3x+12y+1)(x+4y -2)",
+ wrong:["(3x+12y -1)(x+4y+2)","(x+4y)(3x+12y)-2","(3x+12y+2)(x+4y -1)"]},
+{q:"4(a-b)² -7(a-b)-2", a:"(4a -4b +1)(a -b -2)",
+ wrong:["(4a -4b -1)(a-b +2)","(a-b)(4a-4b)-2","(4(a-b) -2)(a-b -1)"]}
+];
+
+// 95 (만 가능), 99~112 (96~98 제외)
+var problems_95 = [
+{q:"(x -1)(x -3)(x+2)(x+4)+24", a:"(x² + x -12)(x² + x -2)",
+ wrong:["(x² + x -2)(x² + x -12)","(x² + x -14)(x² + x) +24","(x +2)(x -3)(x +4)(x -1)+24"]
+}];
+
+var problems_99_112 = [
+{q:"x² - y² - x +5y -6", a:"(x - y +2)(x + y -3)",
+ wrong:["(x + y +2)(x - y -3)","(x - y -2)(x + y +3)","(x -3)(x - y² +5y)"]},
+{q:"x² - y² + x +7y -12", a:"(x - y +4)(x + y -3)",
+ wrong:["(x + y +4)(x - y -3)","(x -3)(x +4) - y²","(x +4)(x -3) - y²"]},
+{q:"x² -5xy +6y² + x - y -2", a:"(x -2y +1)(x -3y -2)",
+ wrong:["(x -3y +1)(x -2y -2)","(x -2y -1)(x -3y +2)","(x -2y +2)(x -3y -1)"]},
+{q:"x² - y² +2x +8y -15", a:"(x - y +5)(x + y -3)",
+ wrong:["(x + y +5)(x - y -3)","(x -3)(x +5)-y²","(x² -y² +2x +8y -15)"]},
+{q:"x² -2y² - xy -3x +2", a:"(x - y +1)(x + 2y -2)",
+ wrong:["(x + y -1)(x -2y +2)","(x - 2)(x + y -1)","(x - y)(x + 2y) -2"]},
+{q:"x² +2xy + y² +3y +3x -4", a:"(x + y +4)(x + y -1)",
+ wrong:["(x + y -4)(x + y +1)","(x + y +2)(x + y -2)","(x + y)² +(3x +3y -4)"]},
+{q:"x² + y² -2xy - x + y -2", a:"(x - y -1)(x - y +2)",
+ wrong:["(x - y +1)(x - y -2)","(x - y)² -x +y -2","(x² -2xy + y²) - x + y -2"]},
+{q:"x² - y² +6x +2y +8", a:"(x - y +4)(x + y +2)",
+ wrong:["(x + y +4)(x - y +2)","(x - y -4)(x + y -2)","(x +4)(x +2) - y²"]},
+{q:"x² -2x - y² -4y -3", a:"(x - y -3)(x + y +1)",
+ wrong:["(x + y -3)(x - y -1)","(x -1)² - (y+2)²","(x - (y+1.5))²..."]},
+{q:"x² +3x - y² + y +2", a:"(x - y +2)(x + y +1)",
+ wrong:["(x + y +2)(x - y +1)","(x - y -2)(x + y -1)","(x -1)(x - y + y²)"]},
+{q:"x² -3y² + x +2xy +7y -2", a:"(x + y -1)(x -3y +2)",
+ wrong:["(x - y +1)(x +3y -2)","(x + y +2)(x -3y -1)","(x -3y)(x + y) +..."]},
+{q:"x² +4x - y² +2y +3", a:"(x - y +1)(x + y +3)",
+ wrong:["(x + y +1)(x - y +3)","(x +2)² - (y -1)²","(x + y)(x - y) +..."]},
+{q:"x² -4xy +3y² -6x +2y -16", a:"(x -3y -4)(x - y +4)",
+ wrong:["(x - y -4)(x -3y +4)","(x - y +4)(x -3y -4)","(x -3y)(x - y) -16"]},
+{q:"x² -2x - y² +2y", a:"(x -1 + y)(x -1 - y)",
+ wrong:["(x -1)² - y²","(x + y -1)(x + y +1)","(x - y -1)(x - y +1)"]}
+];
+
+// 모든 문제 배열 합치기 (인수분해 불가문제 제외)
+var allProblems = [].concat(
+  problems_1_26,
+  problems_28_50, 
+  problems_55_83, 
+  problems_95, 
+  problems_99_112
+);
+
+// 난이도 선택 후 시작
+function startGame(diff) {
+  currentDifficulty = diff;
+  document.getElementById('difficulty-screen').classList.add('hidden');
+  document.getElementById('game-screen').classList.remove('hidden');
+  document.getElementById('current-difficulty').textContent = "난이도: " + 
+    (diff==="hardest"?"최상":(diff==="hard"?"상":(diff==="medium"?"중":"하")));
+  if(difficultySettings[diff].time !== null){
+    document.getElementById('energy-bar-container').classList.remove('hidden');
+  }
+  nextProblem();
+  startGlobalTimer();
+}
+
+function startGlobalTimer() {
+  setInterval(function(){
+    totalTime++;
+    document.getElementById('total-time').textContent = "전체 경과 시간: " + totalTime + "초";
+  },1000);
+}
+
+var energyDecreaseInterval = null;
+var baseTime = null;
+
+function nextProblem() {
+  if(!infiniteMode && usedProblems.length === allProblems.length) {
+    infiniteMode = true; 
+  }
+  
+  if(infiniteMode) {
+    currentProblem = allProblems[Math.floor(Math.random()*allProblems.length)];
+  } else {
+    var unused = allProblems.filter(p=>usedProblems.indexOf(p)===-1);
+    currentProblem = unused[Math.floor(Math.random()*unused.length)];
+    usedProblems.push(currentProblem);
+  }
+
+  showProblem(currentProblem);
+}
+
+function showProblem(prob) {
+  document.getElementById('message').textContent = "";
+  document.getElementById('problem').innerHTML = "\\(" + prob.q.replace(/\*/g,"\\cdot") +"\\)";
+  
+  var answers = [prob.a].concat(prob.wrong);
+  shuffleArray(answers);
+  var unique = [...new Set(answers)];
+  while(unique.length<4) unique.push("추가기답");
+  
+  var html="";
+  unique.slice(0,4).forEach(ans=>{
+    html += "<li onclick='checkAnswer(\""+escapeQuotes(ans)+"\")'>\\("+ans+"\\)</li>";
+  });
+  document.getElementById('choices').innerHTML = html;
+  MathJax.typeset();
+  
+  resetEnergyBar();
+}
+
+function checkAnswer(ans) {
+  if(ans === currentProblem.a) {
+    score += difficultySettings[currentDifficulty].score;
+    document.getElementById('score').textContent = "점수: " + score;
+    document.getElementById('message').textContent = "정답!";
+    triggerRandomReward();
+    stopEnergyBar();
+    setTimeout(function(){
+      nextProblem();
+    },1000);
+  } else {
+    lives--;
+    document.getElementById('chance').textContent = "남은 기회: " + lives;
+    document.getElementById('message').textContent = "오답! 정답: " + currentProblem.a;
+    stopEnergyBar();
+    if(lives<=0) {
+      endGame();
+    } else {
+      setTimeout(function(){
+        nextProblem();
+      },2000);
+    }
+  }
+}
+
+function resetEnergyBar() {
+  stopEnergyBar();
+  var t = difficultySettings[currentDifficulty].time;
+  if(t===null)return;
+  document.getElementById('energy-bar').style.width = "100%";
+  var total = t;
+  var current = total;
+  energyDecreaseInterval = setInterval(function(){
+    current--;
+    var perc = (current/total)*100;
+    document.getElementById('energy-bar').style.width = perc+"%";
+    if(current<=0) {
+      clearInterval(energyDecreaseInterval);
+      energyDecreaseInterval=null;
+      lives--;
+      document.getElementById('chance').textContent = "남은 기회: " + lives;
+      if(lives<=0) {
+        endGame();
+      } else {
+        nextProblem();
+      }
+    }
+  },1000);
+}
+
+function stopEnergyBar() {
+  if(energyDecreaseInterval) {
+    clearInterval(energyDecreaseInterval);
+    energyDecreaseInterval=null;
+  }
+}
+
+function endGame() {
+  stopEnergyBar();
+  document.getElementById('game-screen').classList.add('hidden');
+  document.getElementById('result-screen').classList.remove('hidden');
+  document.getElementById('final-score').textContent = score;
+}
+
+function shuffleArray(array) {
+  for(let i=array.length-1;i>0;i--){
+    let j=Math.floor(Math.random()*(i+1));
+    [array[i],array[j]]=[array[j],array[i]];
+  }
+}
+
+function escapeQuotes(str){
+  return str.replace(/"/g,'\\"');
+}
+
+// 확률 이벤트
+function triggerRandomReward() {
+  if(popupShown) return;
+  var r = Math.random();
+  if(r < 1/10000) {
+    showPopup("축하합니다! 5000원 상품권 당첨!");
+    popupShown = true;
+  } else if(r < 1/1000) {
+    showPopup("축하합니다! 3000원 상품권 당첨!");
+    popupShown = true;
+  } else if(r < 1/500) {
+    showPopup("축하합니다! 1회 면제권 획득!");
+    lives++;
+    document.getElementById('chance').textContent = "남은 기회: " + lives;
+    popupShown = true;
+  }
+}
+
+function showPopup(msg){
+  document.getElementById('popup-message').textContent = msg;
+  document.getElementById('popup').style.display='block';
+}
+
+function closePopup() {
+  document.getElementById('popup').style.display='none';
+  popupShown = false;
+}
+
+</script>
+</body>
+</html>
